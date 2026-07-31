@@ -4,6 +4,8 @@ A **RAG-powered Q&A system** over Python library documentation. Ask questions in
 
 Built as the capstone project for [DataTalks.Club LLM Zoomcamp 2026](https://github.com/DataTalksClub/llm-zoomcamp).
 
+**Ongoing expansion:** the repo is being extended into a **Test-Automation Knowledge Assistant** — RAG over SCPI/PyVisa instrument manuals that answers test-engineer questions and generates runnable PyVisa snippets. Track the plan in [`BACKLOG.md`](BACKLOG.md), per-ticket acceptance & validation in [`VALIDATION.md`](VALIDATION.md), and the current pipeline in [`docs/audit.md`](docs/audit.md). **Phase 0 (restructure, pipeline audit, corpus schema, provider-agnostic LLM) is complete.**
+
 ---
 
 ## Table of Contents
@@ -66,7 +68,7 @@ Python developers frequently consult library documentation (FastAPI, Pydantic, R
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  RAG FLOW                                                                │
 │  Top-5 chunks ──▶ build_prompt(query, chunks)                            │
-│  ──▶ OpenAI GPT-4o-mini ──▶ answer with inline source citations          │
+│  ──▶ LLM (litellm — model from LLM_MODEL env) ─▶ answer + citations      │
 │  ──▶ LLM-as-judge (inline relevance evaluation for monitoring)           │
 └──────────────────────────┬──────────────────────────────────────────────┘
                            │
@@ -82,7 +84,7 @@ Python developers frequently consult library documentation (FastAPI, Pydantic, R
 
 1. **Ingestion** scrapes documentation HTML, splits it by section heading into chunks, builds two search indices (keyword TF-IDF via `minsearch`, vector embeddings via `sentence-transformers`)
 2. **User query** enters the app → optionally rewritten for better matching → searched via hybrid (keyword + vector with RRF fusion) → optionally reranked by a cross-encoder
-3. **Top chunks** are fed into a prompt with the user's question → OpenAI GPT-4o-mini generates an answer citing source URLs
+3. **Top chunks** are fed into a prompt with the user's question → the configured LLM (litellm, selected via `LLM_MODEL` — OpenAI, Anthropic, or local Ollama) generates an answer citing source URLs
 4. **Answer** is displayed in Streamlit with metadata (response time, model, relevance score) and thumbs up/down feedback
 5. **Every interaction** is logged to PostgreSQL → Grafana dashboard visualizes usage, cost, relevance, and feedback
 
@@ -117,7 +119,8 @@ Python developers frequently consult library documentation (FastAPI, Pydantic, R
 | Keyword search | `minsearch` (TF-IDF/BM25-like) |
 | Embeddings | `sentence-transformers` (all-MiniLM-L6-v2, 384-dim) |
 | Vector search | numpy cosine similarity |
-| LLM | OpenAI API (GPT-4o-mini default, GPT-4o optional) |
+| LLM | `litellm` — provider-agnostic (OpenAI, Anthropic, Ollama), model via `LLM_MODEL` env |
+| Source manifest validation | `pydantic` + PyYAML (`ingest/validate_sources.py`)
 | UI | Streamlit |
 | Database | PostgreSQL 16 |
 | Monitoring | Grafana |
@@ -138,7 +141,7 @@ Python developers frequently consult library documentation (FastAPI, Pydantic, R
 │   ├── main.py                 # Streamlit entry point
 │   ├── rag.py                  # RAG flow (retrieve → prompt → LLM → answer)
 │   ├── search.py               # Hybrid search, query rewrite, reranking
-│   ├── llm.py                  # OpenAI LLM client
+│   ├── llm.py                  # Provider-agnostic LLM wrapper (litellm, LLM_MODEL env)
 │   ├── db.py                   # PostgreSQL client (conversations + feedback)
 │   └── evaluation.py           # Hit rate, MRR, retrieve eval, model comparison
 │
@@ -146,6 +149,7 @@ Python developers frequently consult library documentation (FastAPI, Pydantic, R
 │   ├── scrape.py               # Sitemap discovery + HTML scraping
 │   ├── chunk.py                # Section-heading chunking logic
 │   ├── index.py                # Embedding generation + vector + keyword index build
+│   ├── validate_sources.py     # P0-3: corpus/sources.yaml schema validation (pydantic)
 │   └── run.py                  # Orchestration: scrape → chunk → index
 │
 ├── eval/                       # Evaluation pipeline
@@ -165,7 +169,7 @@ Python developers frequently consult library documentation (FastAPI, Pydantic, R
 │   ├── 03-retrieval-eval.ipynb # Hit rate, MRR, boost optimization
 │   └── 04-rag-eval.ipynb       # LLM-as-judge, model comparison
 │
-├── tests/                      # Test suite (132 unit tests, 6 integration)
+├── tests/                      # Test suite (97 unit tests, 5 integration)
 │   ├── test_search.py          # Keyword, vector, hybrid search tests
 │   ├── test_rag.py             # Prompt building, RAG flow tests
 │   ├── test_llm.py             # LLM client tests
@@ -190,7 +194,9 @@ Python developers frequently consult library documentation (FastAPI, Pydantic, R
 ├── docker-compose.yaml         # Multi-service orchestration
 ├── init.py                     # First-run setup (DB tables + Grafana)
 ├── .env.example                # Environment variable template
-└── results.md                  # Saved evaluation output
+├── results.md                  # Saved evaluation output
+├── BACKLOG.md                  # Expansion plan (test-automation assistant)
+└── VALIDATION.md               # Per-ticket tests, milestones, validation steps
 ```
 
 ---
@@ -204,7 +210,7 @@ Python developers frequently consult library documentation (FastAPI, Pydantic, R
 | Python 3.12 | `python --version` should show `3.12.x` |
 | `uv` package manager | [Install guide](https://docs.astral.sh/uv/#installation) — `uv --version` to verify |
 | Docker & Docker Compose | Recommended for full experience. `docker compose version` to verify |
-| OpenAI API key | Set `OPENAI_API_KEY` in `.env` — must have access to `gpt-4o-mini` |
+| LLM model + key | Set `LLM_MODEL` in `.env` plus the matching provider key (`OPENAI_API_KEY` for gpt-4o-mini, `ANTHROPIC_API_KEY` for claude, or no key for `ollama/...`) |
 
 ### Installation (Both Paths)
 
@@ -213,7 +219,7 @@ git clone https://github.com/wong80/LLM-ZOOMCAMP-PROJECT.git
 cd llm-zoomcamp-project
 uv sync
 cp .env.example .env
-# Edit .env: OPENAI_API_KEY=sk-proj-...
+# Edit .env: LLM_MODEL=gpt-4o-mini and OPENAI_API_KEY=sk-proj-... (or any litellm-supported provider)
 ```
 
 **Expected result:** `.venv/` created with all dependencies. `uv sync` is reproducible via `uv.lock`.
@@ -416,7 +422,7 @@ Index built
 ### Final Step: Run Tests
 
 ```bash
-# All unit tests (132 pass)
+# All unit tests (97 pass)
 uv run python -m pytest -m "not integration" -v
 
 # Include integration tests (requires PostgreSQL + Grafana running)
@@ -425,7 +431,7 @@ uv run python -m pytest -v
 
 **Expected:**
 ```
-132 passed, 6 deselected, 2 warnings in ~14s
+97 passed, 5 deselected, 2 warnings in ~20s
 ```
 
 ---
@@ -522,7 +528,7 @@ uv run python -m ingest.run --library pydantic   # ingest Pydantic docs
 
 ### 5. Streaming LLM Responses (+1 pt)
 
-**What it does:** Answers render token-by-token as the LLM generates them, instead of appearing all at once. Uses OpenAI's streaming API via `stream=True`.
+**What it does:** Answers render token-by-token as the LLM generates them, instead of appearing all at once. Uses litellm's streaming (`stream=True`).
 
 **Where:** `app/llm.py` — `llm_stream()`, `app/rag.py` — `rag_stream()`, `app/main.py` — `st.write_stream()`
 
@@ -559,9 +565,9 @@ uv run python -m ingest.run --library pydantic   # ingest Pydantic docs
 | Hybrid search (bonus) | +1 | `app/search.py` — separate keyword/vector/hybrid functions, RRF fusion | Eval shows hybrid HR (0.660) > keyword (0.600) > vector (0.420) |
 | Reranking (bonus) | +1 | `app/search.py` — `rerank()` with cross-encoder | Test: `pytest tests/test_bonus_reranking.py -v` |
 | Query rewriting (bonus) | +1 | `app/search.py` — `rewrite_query()` abbreviation expansion | Test: `pytest tests/test_bonus_query_rewrite.py -v` |
-| Multi-library (bonus) | +1 | `app/search.py` library param, `app/main.py` dynamic dropdown, `ingest/run.py` pydantic | Test: `pytest tests/test_bonus_multi_library.py -v` |
-| Streaming (bonus) | +1 | `app/llm.py` `llm_stream()`, `app/rag.py` `rag_stream()` | Test: `pytest tests/test_bonus_streaming.py -v` |
-| Response caching (bonus) | +1 | `app/rag.py` `_rag_cache` | Test: `pytest tests/test_bonus_caching.py -v` |
+| Multi-library (bonus) | +1 | `app/search.py` library param, `app/main.py` dynamic dropdown, `ingest/run.py` pydantic | Ingest pydantic docs, restart the app — dropdown shows both "FastAPI" and "Pydantic" |
+| Streaming (bonus) | +1 | `app/llm.py` `llm_stream()`, `app/rag.py` `rag_stream()` | Test: `pytest tests/test_ui.py -v` (mocks `rag_stream`) |
+| Response caching (bonus) | +1 | `app/rag.py` `_rag_cache` | Ask the same question twice — second answer returns instantly with `cached: True` |
 | **Total** | **24** | | |
 
 ---
