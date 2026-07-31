@@ -132,18 +132,28 @@ def sample_embeddings(embedding_model, sample_chunks) -> np.ndarray:
 
 @pytest.fixture
 def mock_openai_response(mocker):
-    import app.llm, json, re
-    app.llm._client = None
+    """Mock app.llm.completion (litellm) with a mutable response object.
 
-    mock_response = mocker.MagicMock()
-    mock_response.usage.input_tokens = 10
-    mock_response.usage.output_tokens = 5
-    mock_response.usage.total_tokens = 15
+    Returned mock mirrors the litellm ModelResponse shape: llm() reads
+    choices[0].message.content and usage.{prompt,completion,total}_tokens.
+    Tests may override the JSON by assigning fixture.output_text.
+    """
+    import app.llm
+    import json
+    import re
 
-    mock_client = mocker.MagicMock()
+    response = mocker.MagicMock()
+    response.usage.prompt_tokens = 10
+    response.usage.completion_tokens = 5
+    response.usage.total_tokens = 15
+    response.output_text = json.dumps({
+        "relevance": "RELEVANT", "question": "What is a path operation?",
+        "relevant_chunk_id": "test-001", "reason": "Test reason.",
+    })
+    response.choices[0].message.content = response.output_text
 
     def _make_response(**kw):
-        content = (kw.get("input") or [{}])[0].get("content", "")
+        content = (kw.get("messages") or [{}])[0].get("content", "")
         chunk_id = "test-001"
         m = re.search(r'relevant_chunk_id": "([^"]+)"', content)
         if m:
@@ -151,38 +161,19 @@ def mock_openai_response(mocker):
         m = re.search(r'Title: (.+)', content)
         title = m.group(1).strip() if m else "Section"
 
-        current = json.loads(mock_response.output_text) if isinstance(mock_response.output_text, str) else {}
+        current = json.loads(response.output_text) if isinstance(response.output_text, str) else {}
         current["relevance"] = current.get("relevance", "RELEVANT")
         current["question"] = f"What is {title}?"
         current["relevant_chunk_id"] = chunk_id
         current.setdefault("reason", "Test reason.")
-        mock_response.output_text = json.dumps(current)
-        return mock_response
+        response.output_text = json.dumps(current)
+        response.choices[0].message.content = response.output_text
+        return response
 
-    mock_response.output_text = json.dumps({
-        "relevance": "RELEVANT", "question": "What is a path operation?",
-        "relevant_chunk_id": "test-001", "reason": "Test reason.",
-    })
-    mock_client.responses.create.side_effect = _make_response
-    mocker.patch("app.llm.OpenAI", return_value=mock_client)
-    return mock_response
-
-
-@pytest.fixture
-def mock_openai_client(mocker):
-    import app.llm
-    app.llm._client = None
-    mock_client = mocker.MagicMock()
-    def side_effect(model=None, input=None, **kw):
-        r = mocker.MagicMock()
-        r.output_text = '{"relevance": "RELEVANT", "reason": "test"}'
-        r.usage.input_tokens = 10
-        r.usage.output_tokens = 5
-        r.usage.total_tokens = 15
-        return r
-    mock_client.responses.create.side_effect = side_effect
-    mocker.patch("app.llm.OpenAI", return_value=mock_client)
-    return mock_client
+    mock_completion = mocker.MagicMock()
+    mock_completion.side_effect = _make_response
+    mocker.patch("app.llm.completion", mock_completion)
+    return response
 
 
 @pytest.fixture

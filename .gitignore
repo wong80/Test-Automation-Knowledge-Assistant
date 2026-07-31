@@ -15,3 +15,9 @@ get-pip.py
 
 get-pip.py
 main.py
+BACKLOG.md
+
+# corpus artifacts (generated, reproducible via ingest)
+corpus/raw/
+corpus/parsed/
+corpus/chunks/

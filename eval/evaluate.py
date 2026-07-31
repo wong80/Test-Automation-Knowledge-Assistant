@@ -1,6 +1,12 @@
 """Epic 4: Full evaluation pipeline — ground truth, retrieval eval, LLM eval."""
 
-import json, os, sys, numpy as np
+import json, os, sys
+
+_project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+import numpy as np
 from minsearch import Index
 from app.search import keyword_search, vector_search, hybrid_search
 from app.evaluation import evaluate_retrieval, optimize_boosts, compare_models, comparison_summary

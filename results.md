@@ -1,6 +1,6 @@
 # Evaluation Results
 
-Run: `uv run python evaluate.py` — 50 ground truth pairs, 3 LLM test questions.
+Run: `uv run python eval/evaluate.py` — 50 ground truth pairs, 3 LLM test questions.
 
 ## Retrieval Metrics
 

@@ -148,6 +148,14 @@ Python developers frequently consult library documentation (FastAPI, Pydantic, R
 │   ├── index.py                # Embedding generation + vector + keyword index build
 │   └── run.py                  # Orchestration: scrape → chunk → index
 │
+├── eval/                       # Evaluation pipeline
+│   └── evaluate.py             # End-to-end evaluation script
+│
+├── corpus/                     # Source documents & generated chunks (raw/parsed/chunks gitignored)
+├── retrieval/                  # Retrieval code (hybrid, reranking)
+├── codegen/                    # PyVisa snippet generation
+├── docs/                       # Architecture & pipeline docs
+│
 ├── grafana/                    # Grafana provisioning
 │   └── init.py                 # Auto-create PostgreSQL datasource + import dashboard
 │
@@ -181,7 +189,6 @@ Python developers frequently consult library documentation (FastAPI, Pydantic, R
 ├── Dockerfile                  # App container definition
 ├── docker-compose.yaml         # Multi-service orchestration
 ├── init.py                     # First-run setup (DB tables + Grafana)
-├── evaluate.py                 # End-to-end evaluation script
 ├── .env.example                # Environment variable template
 └── results.md                  # Saved evaluation output
 ```
@@ -376,7 +383,7 @@ streamlit run app/main.py   # now saves conversations
 After ingestion completes, run the evaluation pipeline to reproduce the numbers below:
 
 ```bash
-uv run python evaluate.py
+uv run python eval/evaluate.py
 ```
 
 **What happens:**
@@ -425,7 +432,7 @@ uv run python -m pytest -v
 
 ## Evaluation Results
 
-Run: `uv run python evaluate.py` — 50 ground truth pairs, 3 LLM test questions.
+Run: `uv run python eval/evaluate.py` — 50 ground truth pairs, 3 LLM test questions.
 
 ### Retrieval Metrics
 
@@ -543,7 +550,7 @@ uv run python -m ingest.run --library pydantic   # ingest Pydantic docs
 | Problem description | 2 | README (this document) | Reads the Problem Statement section |
 | Retrieval flow | 2 | `app/search.py` (keyword, vector, hybrid), `ingest/` pipeline | Code review: keyword → vector → hybrid with RRF fusion |
 | Retrieval evaluation | 2 | `notebooks/03-retrieval-eval.ipynb`, `app/evaluation.py` | Contains HR, MRR, boost optimization |
-| LLM evaluation | 2 | `notebooks/04-rag-eval.ipynb`, `evaluate.py` | LLM-as-judge: RELEVANT/PARTLY/NON with cost comparison |
+| LLM evaluation | 2 | `notebooks/04-rag-eval.ipynb`, `eval/evaluate.py` | LLM-as-judge: RELEVANT/PARTLY/NON with cost comparison |
 | Interface | 2 | `app/main.py` (Streamlit UI) | Run `streamlit run app/main.py` — see Ask button, answer, citations, feedback, history |
 | Ingestion pipeline | 2 | `ingest/run.py`, `ingest/scrape.py`, `ingest/chunk.py` | Run `uv run python -m ingest.run --library fastapi` — produces chunks, indices |
 | Monitoring | 2 | PostgreSQL schema (`app/db.py`), Grafana dashboard (`grafana/dashboard.json`) | Start stack: `docker compose up` + `python init.py` → Grafana shows 6 panels |
